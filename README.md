@@ -1,4 +1,4 @@
-# sqlite-s3vfs
+# sqlite-memory-vfs
 
 [![PyPI package](https://img.shields.io/pypi/v/sqlite-s3vfs?label=PyPI%20package&color=%234c1)](https://pypi.org/project/sqlite-s3vfs/) [![Test suite](https://img.shields.io/github/actions/workflow/status/uktrade/sqlite-s3vfs/test.yml?label=Test%20suite)](https://github.com/uktrade/sqlite-s3vfs/actions/workflows/test.yml) [![Code coverage](https://img.shields.io/codecov/c/github/uktrade/sqlite-s3vfs?label=Code%20coverage)](https://app.codecov.io/gh/uktrade/sqlite-s3vfs)
 
