@@ -2,9 +2,9 @@
 
 [![PyPI package](https://img.shields.io/pypi/v/sqlite-s3vfs?label=PyPI%20package&color=%234c1)](https://pypi.org/project/sqlite-s3vfs/) [![Test suite](https://img.shields.io/github/actions/workflow/status/uktrade/sqlite-s3vfs/test.yml?label=Test%20suite)](https://github.com/uktrade/sqlite-s3vfs/actions/workflows/test.yml) [![Code coverage](https://img.shields.io/codecov/c/github/uktrade/sqlite-s3vfs?label=Code%20coverage)](https://app.codecov.io/gh/uktrade/sqlite-s3vfs)
 
-Python virtual filesystem for SQLite to read from and write to S3.
+Python virtual filesystem for SQLite to read from and write to memory.
 
-No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
+While SQLite supports the special filename `:memory:` that allows the creation of databases in memory, there is no way to populate such a database using raw bytes without hitting disk as an intermediate step. This virtual filesystem overcomes that limitation.
 
 Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998), [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query), and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs).
 
