@@ -4,7 +4,7 @@ import apsw
 
 class MemoryVFS(apsw.VFS):        
     def __init__(self, bucket, block_size=4096):
-        self.name = f's3vfs-{str(uuid.uuid4())}'
+        self.name = f'memory-vfs-{str(uuid.uuid4())}'
         self._bucket = bucket
         self._block_size = block_size
         super().__init__(name=self.name, base='')
