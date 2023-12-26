@@ -11,13 +11,6 @@ Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f22
 > Work in progress. This README is a rough design spec and so can contain information about features that do not yet exist, or information that's only applicable to [sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs), its upstream source fork.
 
 
-## How does it work?
-
-sqlite-s3vfs stores the SQLite database in fixed-sized _blocks_, and each is stored as a separate object in S3. SQLite stores its data in fixed-size _pages_, and always writes exactly a page at a time. This virtual filesystem translates  page reads and writes to block reads and writes. In the case of SQLite pages being the same size as blocks, which is the case by default, each page write results in exactly one block write.
-
-Separate objects are required since S3 does not support the partial replace of an object; to change even 1 byte, it must be re-uploaded in full.
-
-
 ## Installation
 
 sqlite-s3vfs can be installed from PyPI using `pip`.
