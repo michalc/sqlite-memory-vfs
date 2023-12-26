@@ -13,13 +13,13 @@ Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f22
 
 ## Installation
 
-sqlite-s3vfs can be installed from PyPI using `pip`.
+sqlite-memory-vfs can be installed from PyPI using `pip`.
 
 ```bash
-pip install sqlite-s3vfs
+pip install sqlite-memory-vfs
 ```
 
-This will automatically install [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [APSW](https://rogerbinns.github.io/apsw/), and any of their dependencies.
+This will automatically [APSW](https://rogerbinns.github.io/apsw/), and any of its dependencies.
 
 
 ## Usage
