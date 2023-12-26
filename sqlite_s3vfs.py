@@ -92,7 +92,7 @@ class S3VFS(apsw.VFS):
             self._bucket.Object(f'{key_prefix}/{block:010d}').put(Body=block_bytes)
 
 
-class S3VFSFile:
+class S3VFSFile():
     def __init__(self, name, flags, bucket, block_size):
         self._key_prefix = \
             self._key_prefix = name.filename() if isinstance(name, apsw.URIFilename) else \
@@ -148,6 +148,9 @@ class S3VFSFile:
 
     def xSync(self, flags):
         return True
+
+    def xSectorSize(self):
+        return 0
 
     def xTruncate(self, newsize):
         total = 0
