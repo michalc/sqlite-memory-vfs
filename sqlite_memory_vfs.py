@@ -2,7 +2,7 @@ import uuid
 import apsw
 
 
-class S3VFS(apsw.VFS):        
+class MemoryVFS(apsw.VFS):        
     def __init__(self, bucket, block_size=4096):
         self.name = f's3vfs-{str(uuid.uuid4())}'
         self._bucket = bucket
@@ -24,7 +24,7 @@ class S3VFS(apsw.VFS):
         self._bucket.objects.filter(Prefix=filename + '/').delete()
 
     def xOpen(self, name, flags):
-        return S3VFSFile(name, flags, self._bucket, self._block_size)
+        return MemoryVFSFile(name, flags, self._bucket, self._block_size)
 
     def serialize_iter(self, key_prefix):
         for obj in self._bucket.objects.filter(Prefix=key_prefix + '/'):
@@ -92,7 +92,7 @@ class S3VFS(apsw.VFS):
             self._bucket.Object(f'{key_prefix}/{block:010d}').put(Body=block_bytes)
 
 
-class S3VFSFile():
+class MemoryVFSFile():
     def __init__(self, name, flags, bucket, block_size):
         self._key_prefix = \
             self._key_prefix = name.filename() if isinstance(name, apsw.URIFilename) else \

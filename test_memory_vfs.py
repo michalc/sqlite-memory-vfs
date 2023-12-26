@@ -8,7 +8,7 @@ import boto3
 import sqlite3
 import pytest
 
-from sqlite_memory_vfs import S3VFS
+from sqlite_memory_vfs import MemoryVFS
 
 PAGE_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 BLOCK_SIZES = [4095, 4096, 4097]
@@ -84,7 +84,7 @@ def empty_db(cursor):
     'journal_mode', JOURNAL_MODES
 )
 def test_s3vfs(bucket, page_size, block_size, journal_mode):
-    s3vfs = S3VFS(bucket=bucket, block_size=block_size)
+    s3vfs = MemoryVFS(bucket=bucket, block_size=block_size)
 
     # Create a database and query it
     with closing(apsw.Connection("a-test/cool.db", vfs=s3vfs.name)) as db:
@@ -206,7 +206,7 @@ def test_s3vfs(bucket, page_size, block_size, journal_mode):
     'journal_mode', JOURNAL_MODES
 )
 def test_deserialize_iter(bucket, page_size, block_size, journal_mode):
-    s3vfs = S3VFS(bucket=bucket, block_size=block_size)
+    s3vfs = MemoryVFS(bucket=bucket, block_size=block_size)
 
     with tempfile.NamedTemporaryFile() as fp_sqlite3:
         with closing(sqlite3.connect(fp_sqlite3.name)) as db:
@@ -237,7 +237,7 @@ def test_deserialize_iter(bucket, page_size, block_size, journal_mode):
     'block_size', [65536]
 )
 def test_byte_lock_page(bucket, page_size, block_size):
-    s3vfs = S3VFS(bucket=bucket, block_size=block_size)
+    s3vfs = MemoryVFS(bucket=bucket, block_size=block_size)
     empty = (bytes(4050),)
 
     with closing(apsw.Connection('another-test/cool.db', vfs=s3vfs.name)) as db:
@@ -262,7 +262,7 @@ def test_byte_lock_page(bucket, page_size, block_size):
 
 
 def test_set_temp_store_which_calls_xaccess(bucket):
-    s3vfs = S3VFS(bucket=bucket)
+    s3vfs = MemoryVFS(bucket=bucket)
     with closing(apsw.Connection('another-test/cool.db', vfs=s3vfs.name)) as db:
         db.cursor().execute("pragma temp_store_directory = 'my-temp-store'")
 
@@ -277,7 +277,7 @@ def test_set_temp_store_which_calls_xaccess(bucket):
     'journal_mode', [journal_mode for journal_mode in JOURNAL_MODES if journal_mode != 'OFF']
 )
 def test_rollback(bucket, page_size, block_size, journal_mode):
-    s3vfs = S3VFS(bucket=bucket, block_size=block_size)
+    s3vfs = MemoryVFS(bucket=bucket, block_size=block_size)
 
     with closing(apsw.Connection('another-test/cool.db', vfs=s3vfs.name)) as db:
         db.cursor().execute(f'PRAGMA page_size = {page_size};')
