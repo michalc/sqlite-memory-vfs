@@ -3,12 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sqlite-s3vfs"
+name = "sqlite-memory-vfs"
 version = "0.0.0.dev0"
 authors = [
+  { name="Michal Charemza", email="michal@charemza.name" },
+  # The DIT wrote the sqlite-s3vfs which this project is a fork of
   { name="Department for International Trade", email="sre@digital.trade.gov.uk" },
 ]
-description = "Virtual filesystem for SQLite to read from and write to S3"
+description = "Python writable in-memory virtual filesystem for SQLite"
 readme = "README.md"
 requires-python = ">=3.7.11"
 classifiers = [
@@ -28,7 +30,7 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/uktrade/sqlite-s3vfs"
+"Homepage" = "https://github.com/michalc/sqlite-memory-vfs"
 
 [tool.hatch.build]
 include = [
