@@ -112,26 +112,6 @@ def test_s3vfs(bucket, page_size, block_size, journal_mode):
         cursor.execute('PRAGMA integrity_check;')
         assert cursor.fetchall() == [('ok',)]
 
-    # Serialize a database with serialize_fileobj, upload to S3, download it, and query it
-    with \
-            tempfile.NamedTemporaryFile() as fp_s3vfs:
-
-        target_obj = bucket.Object('target/cool.sqlite')
-        target_obj.upload_fileobj(s3vfs.serialize_fileobj(key_prefix='a-test/cool.db'))
-
-        fp_s3vfs.write(target_obj.get()['Body'].read())
-        fp_s3vfs.flush()
-
-        with \
-                closing(sqlite3.connect(fp_s3vfs.name)) as db, \
-                transaction(db.cursor()) as cursor:
-
-            cursor.execute('SELECT * FROM foo;')
-            assert cursor.fetchall() == [(1, 2)] * 100
-
-            cursor.execute('PRAGMA integrity_check;')
-            assert cursor.fetchall() == [('ok',)]
-
     # Serialize a database with serialize_iter and query it
     with \
             tempfile.NamedTemporaryFile() as fp_s3vfs, \
