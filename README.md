@@ -19,88 +19,54 @@ sqlite-memory-vfs can be installed from PyPI using `pip`.
 pip install sqlite-memory-vfs
 ```
 
-This will automatically [APSW](https://rogerbinns.github.io/apsw/), and any of its dependencies.
-
-
-## Usage
-
-sqlite-s3vfs is an [APSW](https://rogerbinns.github.io/apsw/) virtual filesystem that requires [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) for its communication with S3.
-
-```python
-import apsw
-import boto3
-import sqlite_s3vfs
-
-# A boto3 bucket resource
-bucket = boto3.Session().resource('s3').Bucket('my-bucket')
-
-# An S3VFS for that bucket
-s3vfs = sqlite_s3vfs.S3VFS(bucket=bucket)
-
-# sqlite-s3vfs stores many objects under this prefix
-# Note that it's not typical to start a key prefix with '/'
-key_prefix = 'my/path/cool.sqlite'
-
-# Connect, insert data, and query
-with apsw.Connection(key_prefix, vfs=s3vfs.name) as db:
-    cursor = db.cursor()
-    cursor.execute('''
-        CREATE TABLE foo(x,y);
-        INSERT INTO foo VALUES(1,2);
-    ''')
-    cursor.execute('SELECT * FROM foo;')
-    print(cursor.fetchall())
-```
-
-See the [APSW documentation](https://rogerbinns.github.io/apsw/) for more examples.
-
-
-### Serializing (getting a regular SQLite file out of the VFS)
-
-The bytes corresponding to a regular SQLite file can be extracted with the `serialize_iter` function, which returns an iterable,
-
-```python
-for chunk in s3vfs.serialize_iter(key_prefix=key_prefix):
-    print(chunk)
-```
-
-or with `serialize_fileobj`, which returns a non-seekable file-like object. This can be passed to Boto3's `upload_fileobj` method to upload a regular SQLite file to S3.
-
-```python
-target_obj = boto3.Session().resource('s3').Bucket('my-target-bucket').Object('target/cool.sqlite')
-target_obj.upload_fileobj(s3vfs.serialize_fileobj(key_prefix=key_prefix))
-```
+This will automatically install [APSW](https://rogerbinns.github.io/apsw/) along with any other dependencies.
 
 
 ### Deserializing (getting a regular SQLite file into the VFS)
 
-```python
-# Any iterable that yields bytes can be used. In this example, bytes come from
-# a regular SQLite file already in S3
-source_obj = boto3.Session().resource('s3').Bucket('my-source-bucket').Object('source/cool.sqlite')
-bytes_iter = source_obj.get()['Body'].iter_chunks()
+This library allows the raw bytes of a SQLite database to be queried without having to save it to disk. This can be done by using the `deserialize_iter` method of `MemoryVFS`, passing it an iterable of `bytes` instances that contain the SQLite database.
 
-s3vfs.deserialize_iter(key_prefix='my/path/cool.sqlite', bytes_iter=bytes_iter)
+```python
+import apsw
+import httpx
+import sqlite_memory_vfs
+
+memory_vfs = sqlite_memory_vfs.MemoryVFS()
+
+# Any iterable of bytes can be used. In this example, they come via HTTP
+with httpx.stream("GET", "https://www.example.com/my_dq.sqlite") as r:
+    memory_vfs.deserialize_iter('my_db.sqlite', r.iter_bytes())
+
+with apsw.Connection('my_db.sqlite', vfs=memory_vfs.name) as db:
+    cursor.execute('SELECT * FROM foo;')
+    print(cursor.fetchall())
+```
+
+If the `deserialize_iter` step is ommitted an empty database is automatically created in memory.
+
+See the [APSW documentation](https://rogerbinns.github.io/apsw/) for more usage examples.
+
+
+### Serializing (getting a regular SQLite file out of the VFS)
+
+The bytes corresponding to each SQLite database in the VFS can be extracted with the `serialize_iter` function, which returns an iterable of `bytes`
+
+```python
+for chunk in memory_vfs.serialize_iter('my_db.sqlite'):
+    print(chunk)
 ```
 
 
 ## Tests
 
-The tests require the dev dependencies and MinIO started
+The tests require the dev dependencies installed
 
 ```bash
 pip install -e ".[dev]"
-./start-minio.sh
 ```
 
-can be run with pytest
+and can then run with pytest
 
 ```bash
 pytest
-```
-
-and finally Minio stopped
-
-```bash
-./stop-minio.sh
 ```
