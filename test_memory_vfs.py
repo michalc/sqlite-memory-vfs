@@ -8,7 +8,7 @@ import boto3
 import sqlite3
 import pytest
 
-from sqlite_s3vfs import S3VFS
+from sqlite_memory_vfs import S3VFS
 
 PAGE_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 BLOCK_SIZES = [4095, 4096, 4097]

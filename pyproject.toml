@@ -32,5 +32,5 @@ dev = [
 
 [tool.hatch.build]
 include = [
-  "sqlite_s3vfs.py",
+  "sqlite_memory_vfs.py",
 ]
