@@ -8,7 +8,7 @@ While SQLite supports the special filename `:memory:` that allows the creation o
 
 No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
 
-Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998), [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query), and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs).
+Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c) and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998) and [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query).
 
 
 ## Installation
