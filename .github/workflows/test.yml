@@ -22,8 +22,6 @@ jobs:
       - uses: "actions/setup-python@v4"
         with:
           python-version: '${{ matrix.python-version }}'
-      - name: "Start MinIO"
-        run: ./start-minio.sh
       - name: "Install package and python dependencies"
         run: |
           pip install .[dev]

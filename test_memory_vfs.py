@@ -4,33 +4,14 @@ import uuid
 from contextlib import closing, contextmanager
 
 import apsw
-import boto3
 import sqlite3
 import pytest
 
 from sqlite_memory_vfs import MemoryVFS
 
 PAGE_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
-BLOCK_SIZES = [4095, 4096, 4097]
+BLOCK_SIZES = [4095, 4096, 4097, 1000000]
 JOURNAL_MODES = ['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'OFF']
-
-
-@pytest.fixture
-def bucket():
-    session = boto3.Session(
-        aws_access_key_id='AKIAIDIDIDIDIDIDIDID',
-        aws_secret_access_key='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        region_name='us-east-1',
-    )
-    s3 = session.resource('s3',
-        endpoint_url='http://localhost:9000/'
-    )
-
-    bucket = s3.create_bucket(Bucket=f's3vfs-{str(uuid.uuid4())}')
-    yield bucket
-    bucket.objects.all().delete()
-    bucket.delete()
-
 
 @contextmanager
 def transaction(cursor):
@@ -78,13 +59,10 @@ def empty_db(cursor):
     'page_size', PAGE_SIZES
 )
 @pytest.mark.parametrize(
-    'block_size', BLOCK_SIZES
-)
-@pytest.mark.parametrize(
     'journal_mode', JOURNAL_MODES
 )
-def test_memory_vfs(bucket, page_size, block_size, journal_mode):
-    memory_vfs = MemoryVFS(bucket=bucket, block_size=block_size)
+def test_memory_vfs(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
 
     # Create a database and query it
     with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db:
@@ -117,7 +95,7 @@ def test_memory_vfs(bucket, page_size, block_size, journal_mode):
             tempfile.NamedTemporaryFile() as fp_memory_vfs, \
             tempfile.NamedTemporaryFile() as fp_sqlite3:
 
-        for chunk in memory_vfs.serialize_iter(key_prefix='a-test/cool.db'):
+        for chunk in memory_vfs.serialize_iter('a-test/cool.db'):
             # Empty chunks can be treated as EOF, so never output those
             assert bool(chunk)
             fp_memory_vfs.write(chunk)
@@ -158,7 +136,7 @@ def test_memory_vfs(bucket, page_size, block_size, journal_mode):
         fp_memory_vfs.truncate(0)
         fp_memory_vfs.seek(0)
 
-        for chunk in memory_vfs.serialize_iter(key_prefix='a-test/cool.db'):
+        for chunk in memory_vfs.serialize_iter('a-test/cool.db'):
             assert bool(chunk)
             fp_memory_vfs.write(chunk)
 
@@ -185,8 +163,8 @@ def test_memory_vfs(bucket, page_size, block_size, journal_mode):
 @pytest.mark.parametrize(
     'journal_mode', JOURNAL_MODES
 )
-def test_deserialize_iter(bucket, page_size, block_size, journal_mode):
-    memory_vfs = MemoryVFS(bucket=bucket, block_size=block_size)
+def test_deserialize_iter(page_size, block_size, journal_mode):
+    memory_vfs = MemoryVFS()
 
     with tempfile.NamedTemporaryFile() as fp_sqlite3:
         with closing(sqlite3.connect(fp_sqlite3.name)) as db:
@@ -194,8 +172,9 @@ def test_deserialize_iter(bucket, page_size, block_size, journal_mode):
 
             with transaction(db.cursor()) as cursor:
                 create_db(cursor)
+                cursor.executemany('INSERT INTO foo VALUES (?,?);', ((1,2) for _ in range(0, 30000)))
 
-        memory_vfs.deserialize_iter(key_prefix='another-test/cool.db', bytes_iter=fp_sqlite3)
+        memory_vfs.deserialize_iter('another-test/cool.db', bytes_iter=iter(lambda: fp_sqlite3.read(block_size), b''))
 
     with \
             closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db, \
@@ -203,21 +182,24 @@ def test_deserialize_iter(bucket, page_size, block_size, journal_mode):
 
         cursor = db.cursor()
         cursor.execute('SELECT * FROM foo;')
-
-        assert cursor.fetchall() == [(1, 2)] * 100
+        assert cursor.fetchall() == [(1, 2)] * 30100
 
         cursor.execute('PRAGMA integrity_check;')
         assert cursor.fetchall() == [('ok',)]
+
+        cursor.execute('UPDATE foo SET x = 0, y = 0')
+        cursor.execute('PRAGMA integrity_check;')
+        assert cursor.fetchall() == [('ok',)]
+
+        cursor.execute('SELECT * FROM foo;')
+        assert cursor.fetchall() == [(0, 0)] * 30100
 
 
 @pytest.mark.parametrize(
     'page_size', [65536]
 )
-@pytest.mark.parametrize(
-    'block_size', [65536]
-)
-def test_byte_lock_page(bucket, page_size, block_size):
-    memory_vfs = MemoryVFS(bucket=bucket, block_size=block_size)
+def test_byte_lock_page(page_size):
+    memory_vfs = MemoryVFS()
     empty = (bytes(4050),)
 
     with closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db:
@@ -241,8 +223,8 @@ def test_byte_lock_page(bucket, page_size, block_size):
         assert cursor.fetchall() == [empty]
 
 
-def test_set_temp_store_which_calls_xaccess(bucket):
-    memory_vfs = MemoryVFS(bucket=bucket)
+def test_set_temp_store_which_calls_xaccess():
+    memory_vfs = MemoryVFS()
     with closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db:
         db.cursor().execute("pragma temp_store_directory = 'my-temp-store'")
 
@@ -251,13 +233,10 @@ def test_set_temp_store_which_calls_xaccess(bucket):
     'page_size', [4096]
 )
 @pytest.mark.parametrize(
-    'block_size', [4095, 4096, 4097]
-)
-@pytest.mark.parametrize(
     'journal_mode', [journal_mode for journal_mode in JOURNAL_MODES if journal_mode != 'OFF']
 )
-def test_rollback(bucket, page_size, block_size, journal_mode):
-    memory_vfs = MemoryVFS(bucket=bucket, block_size=block_size)
+def test_rollback(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
 
     with closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db:
         db.cursor().execute(f'PRAGMA page_size = {page_size};')

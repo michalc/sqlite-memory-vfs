@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "boto3>=1.18.51",
+    "sortedcontainers>=2.4.0",
     "apsw>=3.43.0.0",
 ]
 
