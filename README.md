@@ -6,9 +6,9 @@ Python virtual filesystem for SQLite to read from and write to memory.
 
 While SQLite supports the special filename `:memory:` that allows the creation of databases in memory, there is no way to populate such a database using raw bytes without hitting disk as an intermediate step. This virtual filesystem overcomes that limitation.
 
-Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998), [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query), and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs).
+No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
 
-> Work in progress. This README is a rough design spec and so can contain information about features that do not yet exist, or information that's only applicable to [sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs), its upstream source fork.
+Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998), [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query), and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs).
 
 
 ## Installation
