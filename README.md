@@ -4,7 +4,7 @@
 
 Python virtual filesystem for SQLite to read from and write to memory.
 
-While SQLite supports the special filename `:memory:` that allows the creation of databases in memory, there is no way to populate such a database using raw bytes without hitting disk as an intermediate step. This virtual filesystem overcomes that limitation.
+While SQLite supports the special filename `:memory:` that allows the creation of databases in memory, there is no built-in way to populate such a database using raw bytes without hitting disk as an intermediate step. This virtual filesystem overcomes that limitation.
 
 No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
 
