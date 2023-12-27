@@ -52,8 +52,9 @@ See the [APSW documentation](https://rogerbinns.github.io/apsw/) for more usage 
 The bytes corresponding to each SQLite database in the VFS can be extracted with the `serialize_iter` function, which returns an iterable of `bytes`
 
 ```python
-for chunk in memory_vfs.serialize_iter('my_db.sqlite'):
-    print(chunk)
+with open('my_db.sqlite', 'wb') as f:
+    for chunk in memory_vfs.serialize_iter('my_db.sqlite'):
+        f.write(chunk)
 ```
 
 
