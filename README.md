@@ -34,11 +34,12 @@ import sqlite_memory_vfs
 memory_vfs = sqlite_memory_vfs.MemoryVFS()
 
 # Any iterable of bytes can be used. In this example, they come via HTTP
-with httpx.stream("GET", "https://www.example.com/my_dq.sqlite") as r:
-    memory_vfs.deserialize_iter('my_db.sqlite', r.iter_bytes())
+with httpx.stream("GET", "https://data.api.trade.gov.uk/v1/datasets/uk-trade-quotas/versions/v1.0.366/data?format=sqlite") as r:
+    memory_vfs.deserialize_iter('quota_balances.sqlite', r.iter_bytes())
 
-with apsw.Connection('my_db.sqlite', vfs=memory_vfs.name) as db:
-    cursor.execute('SELECT * FROM foo;')
+with apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
+    cursor = db.cursor()
+    cursor.execute('SELECT * FROM quotas;')
     print(cursor.fetchall())
 ```
 
