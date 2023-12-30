@@ -342,3 +342,34 @@ def test_transaction_exclusive(page_size, journal_mode):
         cursor_2 = db_2.cursor()
         with pytest.raises(apsw.BusyError):
             cursor_2.execute('SELECT * FROM foo;')
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_transaction_reading_prevents_exclusive(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        # Create the database
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+            cursor_1.execute('SELECT * FROM foo;')
+            assert cursor_1.fetchall() == [(1, 2)] * 100
+
+        # Starting to read
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('SELECT * FROM foo')
+
+        # .. prevents getting an exclusive lock
+        cursor_2 = db_2.cursor()
+        with pytest.raises(apsw.BusyError):
+            cursor_2.execute('BEGIN EXCLUSIVE;')
