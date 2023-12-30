@@ -56,10 +56,8 @@ class MemoryVFS(apsw.VFS):
 
         with self.databases_lock:
             self.databases[name] = db, threading.Lock(), {
-                apsw.SQLITE_LOCK_SHARED: 0,
-                apsw.SQLITE_LOCK_RESERVED: 0,
-                apsw.SQLITE_LOCK_PENDING:0,
-                apsw.SQLITE_LOCK_EXCLUSIVE: 0,
+                'level': apsw.SQLITE_LOCK_NONE,
+                'readers': 0,
             }
             return self.databases[name]
 
@@ -105,30 +103,31 @@ class MemoryVFSFile():
 
     def xCheckReservedLock(self):
         with self._lock:
-            return (
-                self._locks[apsw.SQLITE_LOCK_RESERVED] or
-                self._locks[apsw.SQLITE_LOCK_PENDING] or
-                self._locks[apsw.SQLITE_LOCK_EXCLUSIVE]
-            )
+            return self._locks['level'] >= apsw.SQLITE_LOCK_RESERVED
 
     def xLock(self, level):
         with self._lock:
+            # SHARED cannot be obtained if the file is already PENDING or higher
+            if level == apsw.SQLITE_LOCK_SHARED and self._locks['level'] >= apsw.SQLITE_LOCK_PENDING:
+                raise apsw.BusyError()
+
             # Levels of RESERVED or greater can each be obtained at most once
-            if level >= apsw.SQLITE_LOCK_RESERVED and self._locks[level]:
+            if apsw.SQLITE_LOCK_RESERVED <= level <= self._locks['level']:
                 raise apsw.BusyError()
 
-            # SHARED cannot be obtained if the file is already PENDING or EXCLUSIVE
-            if level == apsw.SQLITE_LOCK_SHARED and (self._locks[apsw.SQLITE_LOCK_PENDING] or self._locks[apsw.SQLITE_LOCK_EXCLUSIVE]):
+            # EXCLUSIVE cannot be obtained if there is more than one reader
+            if level == apsw.SQLITE_LOCK_EXCLUSIVE and self._locks['readers'] > 1:
                 raise apsw.BusyError()
 
-            self._locks[level] += 1
+            self._locks['level'] = level
+            if level == apsw.SQLITE_LOCK_SHARED:
+                self._locks['readers'] += 1
 
     def xUnlock(self, level):
         with self._lock:
-            # Unlock the file down to the level requested
-            current_level = max((_level for (_level, count) in self._locks.items() if count), default=0)
-            for level_to_unlock in range(current_level, level, -1):
-                self._locks[level_to_unlock] = max(self._locks[level_to_unlock] - 1, 0)
+            self._locks['level'] = level
+            if level == apsw.SQLITE_LOCK_NONE:
+                self._locks['readers'] -= 1
 
     def xClose(self):
         pass
