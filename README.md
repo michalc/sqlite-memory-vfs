@@ -4,7 +4,7 @@
 
 Python virtual filesystem for SQLite to read from and write to memory.
 
-While SQLite supports the special filename `:memory:` that allows the creation of empty databases in memory, and `sqlite_deserialize` allows the population of an in-memory database from a contiguous block of raw bytes of a serialized database, there is no built-in way to populate such a database using _non_-contiguous raw bytes of a serialized database. The function `sqlite_serialize` can also only serialize a database to a contiguous block of memory. This virtual filesystem overcomes these limitations.
+While SQLite supports the special filename `:memory:` that allows the creation of empty databases in memory, and `sqlite_deserialize` allows the population of an in-memory database from a contiguous block of raw bytes of a serialized database, there is no built-in way to populate such a database using _non_-contiguous raw bytes of a serialized database. The function `sqlite_serialize` can also only serialize a database to a contiguous block of memory. This virtual filesystem overcomes these limitations, and so allows larger databases to be downloaded and queried without hitting disk.
 
 No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads on the same database. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
 
@@ -56,6 +56,51 @@ The bytes corresponding to each SQLite database in the VFS can be extracted with
 with open('my_db.sqlite', 'wb') as f:
     for chunk in memory_vfs.serialize_iter('my_db.sqlite'):
         f.write(chunk)
+```
+
+
+### Comparison with `sqlite_deserialize`
+
+The main reason for using sqlite-memory-vfs over `sqlite_deserialize` is the lower memory usage for larger databases. For example the following may not even complete due to running out of memory:
+
+```python
+import resource
+
+import apsw
+import httpx
+
+url = "https://data.api.trade.gov.uk/v1/datasets/uk-tariff-2021-01-01/versions/v4.0.46/data?format=sqlite"
+
+with apsw.Connection(':memory:') as db:
+    db.deserialize('main', httpx.get(url).read())
+    cursor = db.cursor()
+    cursor.execute('SELECT * FROM measures;')
+    print(cursor.fetchall())
+
+print('Max memory usage:', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+```
+
+But the following does / should output a lower value of memory usage:
+
+```python
+import resource
+
+import apsw
+import httpx
+import sqlite_memory_vfs
+
+url = "https://data.api.trade.gov.uk/v1/datasets/uk-tariff-2021-01-01/versions/v4.0.46/data?format=sqlite"
+memory_vfs = sqlite_memory_vfs.MemoryVFS()
+
+with httpx.stream("GET", url) as r:
+    memory_vfs.deserialize_iter('tariff.sqlite', r.iter_bytes())
+
+with apsw.Connection('tariff.sqlite', vfs=memory_vfs.name) as db:
+    cursor = db.cursor()
+    cursor.execute('SELECT count(*) FROM measures;')
+    print(cursor.fetchall())
+
+print('Max memory usage:', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 ```
 
 
