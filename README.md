@@ -6,8 +6,6 @@ Python virtual filesystem for SQLite to read from and write to memory.
 
 While SQLite supports the special filename `:memory:` that allows the creation of empty databases in memory, and `sqlite_deserialize` allows the population of an in-memory database from a contiguous block of raw bytes of a serialized database, there is no built-in way to populate such a database using _non_-contiguous raw bytes of a serialized database. The function `sqlite_serialize` can also only serialize a database to a contiguous block of memory. This virtual filesystem overcomes these limitations, and so allows larger databases to be downloaded and queried without hitting disk.
 
-No locking is performed, so client code _must_ ensure that writes do not overlap with other writes or reads on the same database. If multiple writes happen at the same time, the database will probably become corrupt and data be lost.
-
 Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c) and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998) and [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query).
 
 
