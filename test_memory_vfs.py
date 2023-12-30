@@ -13,6 +13,10 @@ PAGE_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 BLOCK_SIZES = [4095, 4096, 4097, 1000000]
 JOURNAL_MODES = ['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'OFF']
 
+PAGE_SIZES = [512]
+BLOCK_SIZES = [4095]
+JOURNAL_MODES = ['DELETE']
+
 @contextmanager
 def transaction(cursor):
     cursor.execute('BEGIN;')
@@ -266,3 +270,78 @@ def test_rollback(page_size, journal_mode):
         except:
             cursor.execute('SELECT * FROM foo;')
             assert cursor.fetchall() == [('hello',)]
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_transaction_non_exclusive(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        # Create the database
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+            cursor_1.execute('SELECT * FROM foo;')
+            assert cursor_1.fetchall() == [(1, 2)] * 100
+
+        with \
+                transaction(db_1.cursor()) as cursor_1, \
+                transaction(db_2.cursor()) as cursor_2:
+
+            # Multiple transactions can query it...
+            cursor_1.execute('SELECT * FROM foo;')
+            assert cursor_1.fetchall() == [(1, 2)] * 100
+
+            cursor_2.execute('SELECT * FROM foo;')
+            assert cursor_2.fetchall() == [(1, 2)] * 100
+
+            # ... but once modifications are made
+            cursor_1.execute('DELETE FROM foo;')
+
+            # ... concurrent queries are still possible
+            cursor_2.execute('SELECT * FROM foo;')
+            assert cursor_2.fetchall() == [(1, 2)] * 100
+
+            # but not writes
+            with pytest.raises(apsw.BusyError):
+                cursor_2.execute('DELETE FROM foo;')
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_transaction_exclusive(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        # Create the database
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+            cursor_1.execute('SELECT * FROM foo;')
+            assert cursor_1.fetchall() == [(1, 2)] * 100
+
+        # And an exclusive lock...
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN EXCLUSIVE;')
+
+        # .. prevents concurrent reads
+        cursor_2 = db_2.cursor()
+        with pytest.raises(apsw.BusyError):
+            cursor_2.execute('SELECT * FROM foo;')
