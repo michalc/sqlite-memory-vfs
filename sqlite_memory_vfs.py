@@ -116,8 +116,12 @@ class MemoryVFSFile():
             if level == apsw.SQLITE_LOCK_SHARED and self._locks['writers']:
                 raise apsw.BusyError()
 
-            # RESERVED cannot be obtained if there is more than one reader
-            if level == apsw.SQLITE_LOCK_RESERVED and self._locks['readers'] > 1:
+            # RESERVED cannot be obtained if there is already a writer
+            if level == apsw.SQLITE_LOCK_RESERVED and self._locks['writers']:
+                raise apsw.BusyError()
+
+            # EXCLUSIVE cannot be obtained if there are more than one readers
+            if level == apsw.SQLITE_LOCK_EXCLUSIVE and self._locks['readers'] > 1:
                 raise apsw.BusyError()
 
             self._level = level
