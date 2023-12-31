@@ -133,12 +133,9 @@ class MemoryVFSFile():
             if self._level == level:
                 return
 
-            if self._level >= apsw.SQLITE_LOCK_EXCLUSIVE and level < apsw.SQLITE_LOCK_EXCLUSIVE:
-                self._locks[ apsw.SQLITE_LOCK_EXCLUSIVE] -= 1
-            if self._level >= apsw.SQLITE_LOCK_RESERVED and level < apsw.SQLITE_LOCK_RESERVED:
-                self._locks[apsw.SQLITE_LOCK_RESERVED] -= 1
-            if self._level >= apsw.SQLITE_LOCK_SHARED and level < apsw.SQLITE_LOCK_SHARED:
-                self._locks[apsw.SQLITE_LOCK_SHARED] -= 1
+            for lock_level in self._locks:
+                if self._level >= lock_level and level < lock_level:
+                    self._locks[lock_level] -= 1
 
             self._level = level
 
