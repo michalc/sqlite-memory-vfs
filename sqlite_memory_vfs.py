@@ -125,13 +125,7 @@ class MemoryVFSFile():
             if level == apsw.SQLITE_LOCK_EXCLUSIVE and self._locks[apsw.SQLITE_LOCK_SHARED] > 1:
                 raise apsw.BusyError()
 
-            if level == apsw.SQLITE_LOCK_SHARED:
-                self._locks[apsw.SQLITE_LOCK_SHARED] += 1
-            if level == apsw.SQLITE_LOCK_RESERVED:
-                self._locks[apsw.SQLITE_LOCK_RESERVED] += 1
-            if level == apsw.SQLITE_LOCK_EXCLUSIVE:
-                self._locks[ apsw.SQLITE_LOCK_EXCLUSIVE] += 1
-
+            self._locks[level] += 1
             self._level = level
 
     def xUnlock(self, level):
