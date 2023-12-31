@@ -294,23 +294,16 @@ def test_transaction_non_exclusive(page_size, journal_mode):
                 transaction(db_1.cursor()) as cursor_1, \
                 transaction(db_2.cursor()) as cursor_2:
 
-            # Multiple transactions can query it...
+            # Multiple transactions can read it...
             cursor_1.execute('SELECT * FROM foo;')
             assert cursor_1.fetchall() == [(1, 2)] * 100
 
             cursor_2.execute('SELECT * FROM foo;')
             assert cursor_2.fetchall() == [(1, 2)] * 100
 
-            # ... but once modifications are made
-            cursor_1.execute('DELETE FROM foo;')
-
-            # ... concurrent queries are still possible
-            cursor_2.execute('SELECT * FROM foo;')
-            assert cursor_2.fetchall() == [(1, 2)] * 100
-
-            # but not writes
+            # ... but once there are multiple readers, no-one can write
             with pytest.raises(apsw.BusyError):
-                cursor_2.execute('DELETE FROM foo;')
+                cursor_1.execute('DELETE FROM foo;')
 
 
 @pytest.mark.parametrize(
@@ -364,6 +357,20 @@ def test_transaction_reading_prevents_exclusive(page_size, journal_mode):
 
             cursor_1.execute('SELECT * FROM foo;')
             assert cursor_1.fetchall() == [(1, 2)] * 100
+
+        # Starting to read
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('SELECT * FROM foo')
+
+        # .. prevents getting an exclusive lock
+        cursor_2 = db_2.cursor()
+        with pytest.raises(apsw.BusyError):
+            cursor_2.execute('BEGIN EXCLUSIVE;')
+
+    # And do the same thing on new database connections
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
 
         # Starting to read
         cursor_1 = db_1.cursor()

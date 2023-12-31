@@ -56,14 +56,14 @@ class MemoryVFS(apsw.VFS):
 
         with self.databases_lock:
             self.databases[name] = db, threading.Lock(), {
-                'level': apsw.SQLITE_LOCK_NONE,
                 'readers': 0,
+                'writers': 0,
             }
             return self.databases[name]
 
 
 class MemoryVFSFile():
-    def __init__(self, db, lock ,locks):
+    def __init__(self, db, lock, locks):
         # The bytes of the database
         self._db = db
 
@@ -71,6 +71,8 @@ class MemoryVFSFile():
         self._lock = lock
         # ... the SQLite locks on the specific file are accessed
         self._locks = locks
+
+        self._level = apsw.SQLITE_LOCK_NONE
 
     def _blocks(self, offset, amount):
         db = self._db
@@ -103,29 +105,37 @@ class MemoryVFSFile():
 
     def xCheckReservedLock(self):
         with self._lock:
-            return self._locks['level'] >= apsw.SQLITE_LOCK_RESERVED
+            return self._locks['writers']
 
     def xLock(self, level):
         with self._lock:
-            # SHARED cannot be obtained if the file is already PENDING or higher
-            if level == apsw.SQLITE_LOCK_SHARED and self._locks['level'] >= apsw.SQLITE_LOCK_PENDING:
+            if self._level == level:
+                return
+
+            # SHARED cannot be obtained if the file has any writers
+            if level == apsw.SQLITE_LOCK_SHARED and self._locks['writers']:
                 raise apsw.BusyError()
 
-            # Levels of RESERVED or greater can each be obtained at most once
-            if apsw.SQLITE_LOCK_RESERVED <= level <= self._locks['level']:
+            # RESERVED cannot be obtained if there is more than one reader
+            if level == apsw.SQLITE_LOCK_RESERVED and self._locks['readers'] > 1:
                 raise apsw.BusyError()
 
-            # EXCLUSIVE cannot be obtained if there is more than one reader
-            if level == apsw.SQLITE_LOCK_EXCLUSIVE and self._locks['readers'] > 1:
-                raise apsw.BusyError()
+            self._level = level
 
-            self._locks['level'] = level
             if level == apsw.SQLITE_LOCK_SHARED:
                 self._locks['readers'] += 1
+            if level == apsw.SQLITE_LOCK_RESERVED:
+                self._locks['writers'] += 1
 
     def xUnlock(self, level):
         with self._lock:
-            self._locks['level'] = level
+            if self._level == level:
+                return
+
+            self._level = level
+
+            if level == apsw.SQLITE_LOCK_SHARED:
+                self._locks['writers'] -= 1
             if level == apsw.SQLITE_LOCK_NONE:
                 self._locks['readers'] -= 1
 
