@@ -164,37 +164,40 @@ class MemoryVFSFile():
         return True
 
     def xWrite(self, data, offset):
-        lock_page_offset = 1073741824
-        page_size = len(data)
         db = self._db
 
-        # SQLite seems to always write pages sequentially, except that it skips the byte-lock page.
-        # To make sure serialization works, we populate the lock page with null bytes if we know
-        # we're just after it.
-        just_after_lock_page = offset == lock_page_offset + page_size
-        to_populate = \
-            (((lock_page_offset, bytes(page_size)),) if just_after_lock_page else ()) + \
-            ((offset, data),)
+        # Mostly SQLite populates data in order, but in at least two cases it doesn't:
+        # - The lock page on the main file at offset 1073741824 is skipped
+        # - Journal files can skip bytes
+        # If we have skipped, we add in a block of empty bytes to make sure all the logic works
+        # in terms of reading and writing, that assumes we have all the bytes
+        try:
+            final_offset, final_block = db.peekitem(-1)
+        except IndexError:
+            pass
+        else:
+            size = final_offset + len(final_block)
+            if offset >= size:
+                db[size] = bytes(offset - size)
 
-        for offset_to_populate, page_to_populate in to_populate:
-            # We might need to delete or modify blocks because they were populated not on exact
-            # page boundaries during initial deserialisation. To avoid issues due to modifying the
-            # list while iterating, we gather the blocks to modify or delete in a list. Each
-            # iteration there is at most a page of data, so it shouldn't be too many
-            blocks_to_delete = list(self._blocks(offset_to_populate, len(page_to_populate)))
-            for (block_offset, block, start, consume) in blocks_to_delete:
-                left_block_offset = block_offset
-                left_keep = block[:start]
+        # We might need to delete or modify blocks because they were populated not on exact page
+        # boundaries during initial deserialisation. To avoid issues due to modifying the list
+        # while iterating, we gather the blocks to modify or delete in a list. There is at most a
+        # page of data, so it shouldn't be too many
+        blocks_to_delete = list(self._blocks(offset, len(data)))
+        for (block_offset, block, start, consume) in blocks_to_delete:
+            left_block_offset = block_offset
+            left_keep = block[:start]
 
-                right_block_offset = block_offset + start + consume
-                right_keep = block[start+consume:]
+            right_block_offset = block_offset + start + consume
+            right_keep = block[start+consume:]
 
-                if left_keep:
-                    db[left_block_offset] = left_keep
-                else:
-                    del db[block_offset]
+            if left_keep:
+                db[left_block_offset] = left_keep
+            else:
+                del db[block_offset]
 
-                if right_keep:
-                    db[right_block_offset] = right_keep
+            if right_keep:
+                db[right_block_offset] = right_keep
 
-            db[offset_to_populate] = page_to_populate
+        db[offset] = data
