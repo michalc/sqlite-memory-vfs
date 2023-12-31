@@ -294,16 +294,23 @@ def test_transaction_non_exclusive(page_size, journal_mode):
                 transaction(db_1.cursor()) as cursor_1, \
                 transaction(db_2.cursor()) as cursor_2:
 
-            # Multiple transactions can read it...
+            # Multiple transactions can query it...
             cursor_1.execute('SELECT * FROM foo;')
             assert cursor_1.fetchall() == [(1, 2)] * 100
 
             cursor_2.execute('SELECT * FROM foo;')
             assert cursor_2.fetchall() == [(1, 2)] * 100
 
-            # ... but once there are multiple readers, no-one can write
+            # ... but once modifications are made
+            cursor_1.execute('DELETE FROM foo;')
+
+            # ... concurrent queries are still possible
+            cursor_2.execute('SELECT * FROM foo;')
+            assert cursor_2.fetchall() == [(1, 2)] * 100
+
+            # but not writes
             with pytest.raises(apsw.BusyError):
-                cursor_1.execute('DELETE FROM foo;')
+                cursor_2.execute('DELETE FROM foo;')
 
 
 @pytest.mark.parametrize(
