@@ -443,3 +443,40 @@ def test_transaction_interrupted(page_size, journal_mode):
     with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
         cursor_1 = db_1.cursor()
         cursor_1.execute('SELECT * FROM foo')
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', [journal_mode for journal_mode in JOURNAL_MODES if journal_mode not in ('OFF', 'MEMORY')]
+)
+def test_transaction_interrupted_with_hot_journal(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN;')
+        cursor_1.executemany('INSERT INTO foo VALUES (?,?);', ((1,2,) for _ in range(0, 300000)))
+        hot_journal = b''.join(memory_vfs.serialize_iter("a-test/cool.db-journal"))
+
+    memory_vfs.deserialize_iter("a-test/cool.db-journal", (hot_journal,))
+
+    # This makes sure that RESERVED locking logic is good after a hot journal recovery, because
+    # during a hot-journal recovery SHARED locks go straight to EXCLUSIVE, bypassing RESERVED.
+    # Specifically, it should not be possible for two connections to start a transaction
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN IMMEDIATE')
+        cursor_2 = db_2.cursor()
+
+        with pytest.raises(apsw.BusyError):
+            cursor_2.execute('BEGIN IMMEDIATE')
