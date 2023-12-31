@@ -419,3 +419,27 @@ def test_transaction_can_start_read_if_another_transaction_started(page_size, jo
             cursor_2.execute('SELECT * FROM foo')
             # ... and then drops the reader lock
             cursor_2.fetchall()
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_transaction_interrupted(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN;')
+        cursor_1.executemany('INSERT INTO foo VALUES (?,?);', ((1,2,) for _ in range(0, 300000)))
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('SELECT * FROM foo')
