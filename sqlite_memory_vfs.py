@@ -135,7 +135,11 @@ class MemoryVFSFile():
 
             for lock_level in self._locks:
                 if self._level >= lock_level and level < lock_level:
-                    self._locks[lock_level] -= 1
+                    # Without the max against zero we would have negative locks for RESERVED after
+                    # the case where a SHARED lock goes straight to EXCLUSIVE, bypassing RESERVED.
+                    # This happens when we have a hot-journal, which I'm not even sure is that
+                    # meaningful for an in-memory VFS
+                    self._locks[lock_level] = max(self._locks[lock_level] - 1, 0)
 
             self._level = level
 
