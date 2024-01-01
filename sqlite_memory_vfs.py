@@ -54,14 +54,16 @@ class MemoryVFS(apsw.VFS):
             db[i] = b
             i += len(b)
 
-        with self.databases_lock:
-            self.databases[name] = db, threading.Lock(), {
-                apsw.SQLITE_LOCK_SHARED: 0,
-                apsw.SQLITE_LOCK_RESERVED: 0,
-                apsw.SQLITE_LOCK_PENDING: 0,
-                apsw.SQLITE_LOCK_EXCLUSIVE: 0,
-            }
-            return self.databases[name]
+        db_tuple = db, threading.Lock(), {
+            apsw.SQLITE_LOCK_SHARED: 0,
+            apsw.SQLITE_LOCK_RESERVED: 0,
+            apsw.SQLITE_LOCK_PENDING: 0,
+            apsw.SQLITE_LOCK_EXCLUSIVE: 0,
+        }
+        if name is not None:
+            with self.databases_lock:
+                self.databases[name] = db_tuple
+        return db_tuple
 
 
 class MemoryVFSFile():
