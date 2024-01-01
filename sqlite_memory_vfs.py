@@ -183,7 +183,12 @@ class MemoryVFSFile():
         pass
 
     def xFileSize(self):
-        return sum(len(b) for b in self._db.values())
+        try:
+            final_offset, final_block = self._db.peekitem(-1)
+        except IndexError:
+            return 0
+        else:
+            return final_offset + len(final_block)
 
     def xSync(self, flags):
         return True
