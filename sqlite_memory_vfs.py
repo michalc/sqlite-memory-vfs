@@ -9,8 +9,16 @@ class MemoryVFS(apsw.VFS):
     def __init__(self):
         self.name = f'memory-vfs-{str(uuid.uuid4())}'
         self.databases = {}
-        self.databases_lock = threading.RLock()
+        self.databases_lock = threading.Lock()
         super().__init__(name=self.name, base='')
+
+    def _new_file(self):
+        return SortedDict(), threading.Lock(), {
+            apsw.SQLITE_LOCK_SHARED: 0,
+            apsw.SQLITE_LOCK_RESERVED: 0,
+            apsw.SQLITE_LOCK_PENDING: 0,
+            apsw.SQLITE_LOCK_EXCLUSIVE: 0,
+        }
 
     def xAccess(self, pathname, flags):
         with self.databases_lock:
@@ -36,7 +44,9 @@ class MemoryVFS(apsw.VFS):
             try:
                 db, lock, locks = self.databases[name]
             except KeyError:
-                db, lock, locks = self.deserialize_iter(name, ())
+                db, lock, locks = self._new_file()
+                if name is not None:
+                    self.databases[name] = (db, lock, locks)
 
         return MemoryVFSFile(db, lock ,locks)
 
@@ -47,23 +57,15 @@ class MemoryVFS(apsw.VFS):
         yield from db.values()
 
     def deserialize_iter(self, name, bytes_iter):
-        db = SortedDict()
+        db, lock, locks = self._new_file()
 
         i = 0
         for b in bytes_iter:
             db[i] = b
             i += len(b)
 
-        db_tuple = db, threading.Lock(), {
-            apsw.SQLITE_LOCK_SHARED: 0,
-            apsw.SQLITE_LOCK_RESERVED: 0,
-            apsw.SQLITE_LOCK_PENDING: 0,
-            apsw.SQLITE_LOCK_EXCLUSIVE: 0,
-        }
-        if name is not None:
-            with self.databases_lock:
-                self.databases[name] = db_tuple
-        return db_tuple
+        with self.databases_lock:
+            self.databases[name] = (db, lock, locks)
 
 
 class MemoryVFSFile():
