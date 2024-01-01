@@ -465,9 +465,15 @@ def test_transaction_interrupted_with_hot_journal(page_size, journal_mode):
         cursor_1 = db_1.cursor()
         cursor_1.execute('BEGIN;')
         cursor_1.executemany('INSERT INTO foo VALUES (?,?);', ((1,2,) for _ in range(0, 300000)))
-        hot_journal = b''.join(memory_vfs.serialize_iter("a-test/cool.db-journal"))
 
-    memory_vfs.deserialize_iter("a-test/cool.db-journal", (hot_journal,))
+        # Manually extract the bytes of the journal. We don't use the serialize API because it
+        # attempts to lock the file using SQLite, which doesn't work since this isn't a database
+        hot_journal_tuple = memory_vfs.databases["a-test/cool.db-journal"]
+        hot_journal = b''.join(hot_journal_tuple[0].values())
+
+    hot_journal_tuple[0].clear()
+    hot_journal_tuple[0][0] = hot_journal
+    memory_vfs.databases["a-test/cool.db-journal"] = hot_journal_tuple
 
     # This makes sure that RESERVED locking logic is good after a hot journal recovery, because
     # during a hot-journal recovery SHARED locks go straight to EXCLUSIVE, bypassing RESERVED.
@@ -532,3 +538,82 @@ def test_writer_starvation_avoided(page_size, journal_mode):
         # And the writer also completes
         t.join()
         assert writer_complete
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_serialization_blocks_writes_and_not_reads(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    for chunk in memory_vfs.serialize_iter("a-test/cool.db"):
+        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+            cursor_1 = db_1.cursor()
+            with pytest.raises(apsw.BusyError):
+                cursor_1.execute('BEGIN EXCLUSIVE')
+            cursor_1.execute('SELECT * FROM foo')
+            cursor_1.fetchall()
+        break
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_write_blocks_serialization(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN EXCLUSIVE')
+
+        with pytest.raises(apsw.BusyError):
+            next(iter(memory_vfs.serialize_iter("a-test/cool.db")))
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_read_blocks_deserialization(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    serialized = list(memory_vfs.serialize_iter("a-test/cool.db"))
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        cursor_1 = db_1.cursor()
+        # Obtains a SHARED lock
+        cursor_1.execute("SELECT 1 FROM sqlite_master")
+
+        with pytest.raises(apsw.BusyError):
+            memory_vfs.deserialize_iter("a-test/cool.db", serialized)
+
+        # Drops the SHARED lock
+        cursor_1.fetchall()
+
+        memory_vfs.deserialize_iter("a-test/cool.db", serialized)
