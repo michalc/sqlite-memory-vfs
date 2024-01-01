@@ -98,10 +98,11 @@ def test_memory_vfs(page_size, journal_mode):
             tempfile.NamedTemporaryFile() as fp_memory_vfs, \
             tempfile.NamedTemporaryFile() as fp_sqlite3:
 
-        for chunk in memory_vfs.serialize_iter('a-test/cool.db'):
-            # Empty chunks can be treated as EOF, so never output those
-            assert bool(chunk)
-            fp_memory_vfs.write(chunk)
+        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db:
+            for chunk in memory_vfs.serialize_iter(db):
+                # Empty chunks can be treated as EOF, so never output those
+                assert bool(chunk)
+                fp_memory_vfs.write(chunk)
 
         fp_memory_vfs.flush()
 
@@ -139,9 +140,10 @@ def test_memory_vfs(page_size, journal_mode):
         fp_memory_vfs.truncate(0)
         fp_memory_vfs.seek(0)
 
-        for chunk in memory_vfs.serialize_iter('a-test/cool.db'):
-            assert bool(chunk)
-            fp_memory_vfs.write(chunk)
+        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db:
+            for chunk in memory_vfs.serialize_iter(db):
+                assert bool(chunk)
+                fp_memory_vfs.write(chunk)
 
         fp_memory_vfs.flush()
 
@@ -177,7 +179,8 @@ def test_deserialize_iter(page_size, block_size, journal_mode):
                 create_db(cursor)
                 cursor.executemany('INSERT INTO foo VALUES (?,?);', ((1,2) for _ in range(0, 30000)))
 
-        memory_vfs.deserialize_iter('another-test/cool.db', bytes_iter=iter(lambda: fp_sqlite3.read(block_size), b''))
+        with closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db:
+            memory_vfs.deserialize_iter(db, bytes_iter=iter(lambda: fp_sqlite3.read(block_size), b''))
 
     with \
             closing(apsw.Connection('another-test/cool.db', vfs=memory_vfs.name)) as db, \
@@ -555,14 +558,16 @@ def test_serialization_blocks_writes_and_not_reads(page_size, journal_mode):
         with transaction(db_1.cursor()) as cursor_1:
             create_db(cursor_1)
 
-    for chunk in memory_vfs.serialize_iter("a-test/cool.db"):
-        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
-            cursor_1 = db_1.cursor()
+    with \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+        for chunk in memory_vfs.serialize_iter(db_1):
+            cursor_2 = db_2.cursor()
             with pytest.raises(apsw.BusyError):
-                cursor_1.execute('BEGIN EXCLUSIVE')
-            cursor_1.execute('SELECT * FROM foo')
-            cursor_1.fetchall()
-        break
+                cursor_2.execute('BEGIN EXCLUSIVE')
+            cursor_2.execute('SELECT * FROM foo')
+            cursor_2.fetchall()
+            break
 
 
 @pytest.mark.parametrize(
@@ -580,12 +585,14 @@ def test_write_blocks_serialization(page_size, journal_mode):
         with transaction(db_1.cursor()) as cursor_1:
             create_db(cursor_1)
 
-    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+    with \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
         cursor_1 = db_1.cursor()
         cursor_1.execute('BEGIN EXCLUSIVE')
 
         with pytest.raises(apsw.BusyError):
-            next(iter(memory_vfs.serialize_iter("a-test/cool.db")))
+            next(iter(memory_vfs.serialize_iter(db_2)))
 
 
 @pytest.mark.parametrize(
@@ -603,17 +610,19 @@ def test_read_blocks_deserialization(page_size, journal_mode):
         with transaction(db_1.cursor()) as cursor_1:
             create_db(cursor_1)
 
-    serialized = list(memory_vfs.serialize_iter("a-test/cool.db"))
+        serialized = list(memory_vfs.serialize_iter(db_1))
 
-    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+    with \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+            closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
         cursor_1 = db_1.cursor()
         # Obtains a SHARED lock
         cursor_1.execute("SELECT 1 FROM sqlite_master")
 
         with pytest.raises(apsw.BusyError):
-            memory_vfs.deserialize_iter("a-test/cool.db", serialized)
+            memory_vfs.deserialize_iter(db_2, serialized)
 
         # Drops the SHARED lock
         cursor_1.fetchall()
 
-        memory_vfs.deserialize_iter("a-test/cool.db", serialized)
+        memory_vfs.deserialize_iter(db_2, serialized)

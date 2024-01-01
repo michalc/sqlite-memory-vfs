@@ -32,10 +32,13 @@ import sqlite_memory_vfs
 memory_vfs = sqlite_memory_vfs.MemoryVFS()
 
 # Any iterable of bytes can be used. In this example, they come via HTTP
-with httpx.stream("GET", "https://data.api.trade.gov.uk/v1/datasets/uk-trade-quotas/versions/v1.0.366/data?format=sqlite") as r:
-    memory_vfs.deserialize_iter('quota_balances.sqlite', r.iter_bytes())
+url = "https://data.api.trade.gov.uk/v1/datasets/uk-trade-quotas/versions/v1.0.366/data?format=sqlite"
+with \
+        httpx.stream("GET", url) as r, \
+        apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
 
-with apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
+    memory_vfs.deserialize_iter(db, r.iter_bytes())
+
     cursor = db.cursor()
     cursor.execute('SELECT * FROM quotas;')
     print(cursor.fetchall())
@@ -51,8 +54,11 @@ See the [APSW documentation](https://rogerbinns.github.io/apsw/) for more usage 
 The bytes corresponding to each SQLite database in the VFS can be extracted with the `serialize_iter` function, which returns an iterable of `bytes`
 
 ```python
-with open('my_db.sqlite', 'wb') as f:
-    for chunk in memory_vfs.serialize_iter('my_db.sqlite'):
+with \
+        open('my_db.sqlite', 'wb') as f, \
+        apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
+
+    for chunk in memory_vfs.serialize_iter(db):
         f.write(chunk)
 ```
 
