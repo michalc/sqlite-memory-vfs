@@ -25,6 +25,7 @@ This will automatically install [APSW](https://rogerbinns.github.io/apsw/) along
 This library allows the raw bytes of a SQLite database to be queried without having to save it to disk. This can be done by using the `deserialize_iter` method of `MemoryVFS`, passing it an iterable of `bytes` instances that contain the SQLite database.
 
 ```python
+from contextlib import closing
 import apsw
 import httpx
 import sqlite_memory_vfs
@@ -35,7 +36,7 @@ memory_vfs = sqlite_memory_vfs.MemoryVFS()
 url = "https://data.api.trade.gov.uk/v1/datasets/uk-trade-quotas/versions/v1.0.366/data?format=sqlite"
 with \
         httpx.stream("GET", url) as r, \
-        apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
+        closing(apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name)) as db:
 
     memory_vfs.deserialize_iter(db, r.iter_bytes())
 
@@ -56,7 +57,7 @@ The bytes corresponding to each SQLite database in the VFS can be extracted with
 ```python
 with \
         open('my_db.sqlite', 'wb') as f, \
-        apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name) as db:
+        closing(apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name)) as db:
 
     for chunk in memory_vfs.serialize_iter(db):
         f.write(chunk)
@@ -82,13 +83,14 @@ The main reason for using sqlite-memory-vfs over `sqlite_deserialize` is the low
 
 ```python
 import resource
+from contextlib import closing
 
 import apsw
 import httpx
 
 url = "https://data.api.trade.gov.uk/v1/datasets/uk-tariff-2021-01-01/versions/v4.0.46/data?format=sqlite"
 
-with apsw.Connection(':memory:') as db:
+with closing(apsw.Connection(':memory:')) as db:
     db.deserialize('main', httpx.get(url).read())
     cursor = db.cursor()
     cursor.execute('SELECT * FROM measures;')
@@ -101,6 +103,7 @@ But the following does / should output a lower value of memory usage:
 
 ```python
 import resource
+from contextlib import closing
 
 import apsw
 import httpx
@@ -112,7 +115,7 @@ memory_vfs = sqlite_memory_vfs.MemoryVFS()
 with httpx.stream("GET", url) as r:
     memory_vfs.deserialize_iter('tariff.sqlite', r.iter_bytes())
 
-with apsw.Connection('tariff.sqlite', vfs=memory_vfs.name) as db:
+with closing(apsw.Connection('tariff.sqlite', vfs=memory_vfs.name)) as db:
     cursor = db.cursor()
     cursor.execute('SELECT count(*) FROM measures;')
     print(cursor.fetchall())
