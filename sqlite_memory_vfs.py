@@ -1,6 +1,5 @@
 import threading
 import uuid
-from contextlib import closing
 
 import apsw
 from sortedcontainers import SortedDict
