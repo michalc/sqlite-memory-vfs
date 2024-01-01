@@ -538,3 +538,82 @@ def test_writer_starvation_avoided(page_size, journal_mode):
         # And the writer also completes
         t.join()
         assert writer_complete
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_serialization_blocks_writes_and_not_reads(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    for chunk in memory_vfs.serialize_iter("a-test/cool.db"):
+        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+            cursor_1 = db_1.cursor()
+            with pytest.raises(apsw.BusyError):
+                cursor_1.execute('BEGIN EXCLUSIVE')
+            cursor_1.execute('SELECT * FROM foo')
+            cursor_1.fetchall()
+        break
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_write_blocks_serialization(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        cursor_1 = db_1.cursor()
+        cursor_1.execute('BEGIN EXCLUSIVE')
+
+        with pytest.raises(apsw.BusyError):
+            next(iter(memory_vfs.serialize_iter("a-test/cool.db")))
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', JOURNAL_MODES
+)
+def test_read_blocks_deserialization(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor_1:
+            create_db(cursor_1)
+
+    serialized = list(memory_vfs.serialize_iter("a-test/cool.db"))
+
+    with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1:
+        cursor_1 = db_1.cursor()
+        # Obtains a SHARED lock
+        cursor_1.execute("SELECT 1 FROM sqlite_master")
+
+        with pytest.raises(apsw.BusyError):
+            memory_vfs.deserialize_iter("a-test/cool.db", serialized)
+
+        # Drops the SHARED lock
+        cursor_1.fetchall()
+
+        memory_vfs.deserialize_iter("a-test/cool.db", serialized)

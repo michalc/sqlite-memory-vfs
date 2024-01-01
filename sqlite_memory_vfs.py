@@ -1,5 +1,6 @@
 import threading
 import uuid
+from contextlib import closing
 
 import apsw
 from sortedcontainers import SortedDict
@@ -11,14 +12,6 @@ class MemoryVFS(apsw.VFS):
         self.databases = {}
         self.databases_lock = threading.Lock()
         super().__init__(name=self.name, base='')
-
-    def _new_file(self):
-        return SortedDict(), threading.Lock(), {
-            apsw.SQLITE_LOCK_SHARED: 0,
-            apsw.SQLITE_LOCK_RESERVED: 0,
-            apsw.SQLITE_LOCK_PENDING: 0,
-            apsw.SQLITE_LOCK_EXCLUSIVE: 0,
-        }
 
     def xAccess(self, pathname, flags):
         with self.databases_lock:
@@ -44,28 +37,44 @@ class MemoryVFS(apsw.VFS):
             try:
                 db, lock, locks = self.databases[name]
             except KeyError:
-                db, lock, locks = self._new_file()
+                db, lock, locks = (SortedDict(), threading.Lock(), {
+                    apsw.SQLITE_LOCK_SHARED: 0,
+                    apsw.SQLITE_LOCK_RESERVED: 0,
+                    apsw.SQLITE_LOCK_PENDING: 0,
+                    apsw.SQLITE_LOCK_EXCLUSIVE: 0,
+                })
                 if name is not None:
                     self.databases[name] = (db, lock, locks)
 
         return MemoryVFSFile(db, lock ,locks)
 
     def serialize_iter(self, filename):
-        with self.databases_lock:
-            db, _, _ = self.databases[filename]
+        with closing(apsw.Connection(filename, vfs=self.name)) as conn:
+            cursor = conn.cursor()
+            # Obtains a shared lock that prevents writes during the serialization
+            cursor.execute('SELECT 1 FROM sqlite_master')
 
-        yield from db.values()
+            with self.databases_lock:
+                db, _, _ = self.databases[filename]
+
+            yield from db.values()
 
     def deserialize_iter(self, name, bytes_iter):
-        db, lock, locks = self._new_file()
+        db = SortedDict()
 
         i = 0
         for b in bytes_iter:
             db[i] = b
             i += len(b)
 
-        with self.databases_lock:
-            self.databases[name] = (db, lock, locks)
+        with closing(apsw.Connection(name, vfs=self.name)) as conn:
+            cursor = conn.cursor()
+            # Obtain an exclusive lock that prevents reads and writes during the replace of an
+            # existing database if there was one. Note that the iteration is done outside of the
+            # lock to minimise the time that the lock is needed
+            cursor.execute('BEGIN EXCLUSIVE')
+            with self.databases_lock:
+                self.databases[name] = (db,) + self.databases[name][1:]
 
 
 class MemoryVFSFile():
