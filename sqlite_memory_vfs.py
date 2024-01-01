@@ -48,18 +48,25 @@ class MemoryVFS(apsw.VFS):
 
         return MemoryVFSFile(db, lock ,locks)
 
-    def serialize_iter(self, filename):
-        with closing(apsw.Connection(filename, vfs=self.name)) as conn:
-            cursor = conn.cursor()
-            # Obtains a shared lock that prevents writes during the serialization
-            cursor.execute('SELECT 1 FROM sqlite_master')
+    def serialize_iter(self, conn):
+        cursor = conn.cursor()
 
-            with self.databases_lock:
-                db, _, _ = self.databases[filename]
+        cursor.execute('PRAGMA database_list')
+        filename = next(iter(_filename for _, name, _filename in cursor.fetchall() if name == 'main'))
 
+        # Obtains a shared lock that prevents writes during the serialization
+        cursor.execute('SELECT 1 FROM sqlite_master')
+
+        with self.databases_lock:
+            db, _, _ = self.databases[filename]
+
+        try:
             yield from db.values()
+        finally:
+            # Release the shared lock
+            cursor.fetchall()
 
-    def deserialize_iter(self, name, bytes_iter):
+    def deserialize_iter(self, conn, bytes_iter):
         db = SortedDict()
 
         i = 0
@@ -67,14 +74,20 @@ class MemoryVFS(apsw.VFS):
             db[i] = b
             i += len(b)
 
-        with closing(apsw.Connection(name, vfs=self.name)) as conn:
-            cursor = conn.cursor()
-            # Obtain an exclusive lock that prevents reads and writes during the replace of an
-            # existing database if there was one. Note that the iteration is done outside of the
-            # lock to minimise the time that the lock is needed
-            cursor.execute('BEGIN EXCLUSIVE')
-            with self.databases_lock:
-                self.databases[name] = (db,) + self.databases[name][1:]
+        cursor = conn.cursor()
+
+        cursor.execute('PRAGMA database_list')
+        filename = next(iter(_filename for _, name, _filename in cursor.fetchall() if name == 'main'))
+
+        # Obtain an exclusive lock that prevents reads and writes during the replace of an
+        # existing database if there was one. Note that the iteration is done outside of the
+        # lock to minimise the time that the lock is needed
+        cursor.execute('BEGIN EXCLUSIVE')
+        with self.databases_lock:
+            self.databases[filename] = (db,) + self.databases[filename][1:]
+
+        # Release the exclusive lock
+        cursor.execute('ROLLBACK')
 
 
 class MemoryVFSFile():
