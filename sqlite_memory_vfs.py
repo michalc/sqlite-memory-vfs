@@ -58,6 +58,7 @@ class MemoryVFS(apsw.VFS):
             self.databases[name] = db, threading.Lock(), {
                 apsw.SQLITE_LOCK_SHARED: 0,
                 apsw.SQLITE_LOCK_RESERVED: 0,
+                apsw.SQLITE_LOCK_PENDING: 0,
                 apsw.SQLITE_LOCK_EXCLUSIVE: 0,
             }
             return self.databases[name]
@@ -113,16 +114,26 @@ class MemoryVFSFile():
             if self._level == level:
                 return
 
-            # SHARED cannot be obtained if the file has any EXCLUSIVE
+            # SHARED cannot be obtained if the file has a PENDING lock
+            if level == apsw.SQLITE_LOCK_SHARED and self._locks[apsw.SQLITE_LOCK_PENDING]:
+                raise apsw.BusyError()
+
+            # SHARED cannot be obtained if the file has an EXCLUSIVE lock
             if level == apsw.SQLITE_LOCK_SHARED and self._locks[apsw.SQLITE_LOCK_EXCLUSIVE]:
                 raise apsw.BusyError()
 
-            # RESERVED cannot be obtained if there is another RESERVED
+            # RESERVED cannot be obtained if the file has a RESERVED lock
             if level == apsw.SQLITE_LOCK_RESERVED and self._locks[apsw.SQLITE_LOCK_RESERVED]:
                 raise apsw.BusyError()
 
-            # EXCLUSIVE cannot be obtained if there are more than one SHARED
+            # EXCLUSIVE cannot be obtained if there is more than one SHARED. But if we're not
+            # already PENDING, then we can actually obtain PENDING which then allows the client
+            # to retry (for example via `PRAGMA busy_timeout;`), and preventing other clients
+            # from obtaining new SHARED locks, preventing writer starvation
             if level == apsw.SQLITE_LOCK_EXCLUSIVE and self._locks[apsw.SQLITE_LOCK_SHARED] > 1:
+                if not self._locks[apsw.SQLITE_LOCK_PENDING]:
+                    self._locks[apsw.SQLITE_LOCK_PENDING] += 1
+                    self._level = apsw.SQLITE_LOCK_PENDING
                 raise apsw.BusyError()
 
             self._locks[level] += 1
@@ -136,9 +147,9 @@ class MemoryVFSFile():
             for lock_level in self._locks:
                 if self._level >= lock_level and level < lock_level:
                     # Without the max against zero we would have negative locks for RESERVED after
-                    # the case where a SHARED lock goes straight to EXCLUSIVE, bypassing RESERVED.
-                    # This happens when we have a hot-journal, which I'm not even sure is that
-                    # meaningful for an in-memory VFS
+                    # the case where a SHARED lock goes straight to EXCLUSIVE, bypassing RESERVED
+                    # or PENDING. Bypassing PENDING happens very regularly when there is no
+                    # contention, and bypassing RESERVED happens when we have a hot-journal
                     self._locks[lock_level] = max(self._locks[lock_level] - 1, 0)
 
             self._level = level

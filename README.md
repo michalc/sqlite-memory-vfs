@@ -57,6 +57,19 @@ with open('my_db.sqlite', 'wb') as f:
 ```
 
 
+## Concurrency
+
+It should be safe for any number of readers and writers to attempt to access the database - locking is implemented by the VFS which blocks access to the database when a write in in-flight.
+
+If connection gets blocked, then it will raise `apsw.BusyError`. This is normal SQLite behaviour. You can request that SQLite retry certain actions automatically for a period of time to try to reduce the chance that this surfaces to your code. This can be done by setting a [busy timeout](https://www.sqlite.org/pragma.html#pragma_busy_timeout), for example to set a 500 millisecond timeout:
+
+```sql
+PRAGMA busy_timeout = 500;
+```
+
+Under the hood [writer starvation](https://www.sqlite.org/lockingv3.html#writer_starvation) is avoided by the use of a PENDING lock, much like the default SQLite VFS that writes to disk.
+
+
 ### Comparison with `sqlite_deserialize`
 
 The main reason for using sqlite-memory-vfs over `sqlite_deserialize` is the lower memory usage for larger databases. For example the following may not even complete due to running out of memory:

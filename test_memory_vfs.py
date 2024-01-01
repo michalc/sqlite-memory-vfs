@@ -1,5 +1,7 @@
 import os
 import tempfile
+import threading
+import time
 import uuid
 from contextlib import closing, contextmanager
 
@@ -480,3 +482,53 @@ def test_transaction_interrupted_with_hot_journal(page_size, journal_mode):
 
         with pytest.raises(apsw.BusyError):
             cursor_2.execute('BEGIN IMMEDIATE')
+
+
+@pytest.mark.parametrize(
+    'page_size', PAGE_SIZES
+)
+@pytest.mark.parametrize(
+    'journal_mode', [journal_mode for journal_mode in JOURNAL_MODES if journal_mode not in ('OFF', 'MEMORY')]
+)
+def test_writer_starvation_avoided(page_size, journal_mode):
+    memory_vfs = MemoryVFS()
+    writer_complete = False
+    barrier = threading.Barrier(2)
+
+    def writer():
+        nonlocal writer_complete
+        with closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_3:
+            cursor_writer = db_3.cursor()
+            cursor_writer.execute('PRAGMA busy_timeout=10000')
+            barrier.wait()
+            cursor_writer.execute('BEGIN EXCLUSIVE')
+        writer_complete = True
+
+    with \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_1, \
+        closing(apsw.Connection("a-test/cool.db", vfs=memory_vfs.name)) as db_2:
+        set_pragmas(db_1.cursor(), page_size, journal_mode)
+
+        with transaction(db_1.cursor()) as cursor:
+            create_db(cursor)
+
+        cursor_reader_1 = db_1.cursor()
+        cursor_reader_1.execute('SELECT * FROM foo')
+
+        t = threading.Thread(target=writer)
+        t.start()
+
+        barrier.wait()
+        time.sleep(0.1)  # Just enough time for BEGIN EXLUSIVE to run in SQLite in the thead
+
+        # We make sure we cannot get a new reader
+        cursor_reader_2 = db_2.cursor()
+        with pytest.raises(apsw.BusyError):
+            cursor_reader_2.execute('SELECT * FROM foo')
+
+        # But the first reader completes
+        cursor_reader_1.fetchall()
+
+        # And the writer also completes
+        t.join()
+        assert writer_complete
