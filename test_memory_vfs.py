@@ -465,9 +465,15 @@ def test_transaction_interrupted_with_hot_journal(page_size, journal_mode):
         cursor_1 = db_1.cursor()
         cursor_1.execute('BEGIN;')
         cursor_1.executemany('INSERT INTO foo VALUES (?,?);', ((1,2,) for _ in range(0, 300000)))
-        hot_journal = b''.join(memory_vfs.serialize_iter("a-test/cool.db-journal"))
 
-    memory_vfs.deserialize_iter("a-test/cool.db-journal", (hot_journal,))
+        # Manually extract the bytes of the journal. We don't use the serialize API because it
+        # attempts to lock the file using SQLite, which doesn't work since this isn't a database
+        hot_journal_tuple = memory_vfs.databases["a-test/cool.db-journal"]
+        hot_journal = b''.join(hot_journal_tuple[0].values())
+
+    hot_journal_tuple[0].clear()
+    hot_journal_tuple[0][0] = hot_journal
+    memory_vfs.databases["a-test/cool.db-journal"] = hot_journal_tuple
 
     # This makes sure that RESERVED locking logic is good after a hot journal recovery, because
     # during a hot-journal recovery SHARED locks go straight to EXCLUSIVE, bypassing RESERVED.
