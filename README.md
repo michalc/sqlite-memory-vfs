@@ -46,6 +46,8 @@ with \
 
     memory_vfs.deserialize_iter(db, r.iter_bytes())
 
+# After deserialising the connection must be closed and re-opened before querying
+with closing(apsw.Connection('quota_balances.sqlite', vfs=memory_vfs.name)) as db:
     cursor = db.cursor()
     cursor.execute('SELECT * FROM quotas;')
     print(cursor.fetchall())
