@@ -4,7 +4,13 @@
 
 Python virtual filesystem for SQLite to read from and write to memory.
 
-While SQLite supports the special filename `:memory:` that allows the creation of empty databases in memory, and `sqlite_deserialize` allows the population of an in-memory database from a contiguous block of raw bytes of a serialized database, there is no built-in way to populate such a database using _non_-contiguous raw bytes of a serialized database. The function `sqlite_serialize` can also only serialize a database to a contiguous block of memory. This virtual filesystem overcomes these limitations, and so allows larger databases to be downloaded and queried without hitting disk.
+While SQLite supports the special filename `:memory:` that allows the creation of empty databases in memory, `sqlite_deserialize` allows the population of an in-memory database from raw bytes of a serialized database, and `sqlite_serialize` allows the extraction of the raw bytes of an in-memory database, there are limitations.
+
+- The function `sqlite_deserialize` cannot populate a database from non-contiguous raw bytes.
+- The function `sqlite_serialize` cannot serialize to non-contiguous bytes.
+- Both of these functions only work with databases that are less than 2GB in total, because [SQLite will not allocate more than 2GB in one go](https://www.sqlite.org/malloc.html).
+
+This virtual filesystem overcomes these limitations. Specifically it allows larger databases to be downloaded and queried without hitting disk, and it allows larger databases to be generated and uploaded without hitting disk.
 
 Based on [simonwo's gist](https://gist.github.com/simonwo/b98dc75feb4b53ada46f224a3b26274c) and [uktrade's sqlite-s3vfs](https://github.com/uktrade/sqlite-s3vfs), and inspired by [phiresky's sql.js-httpvfs](https://github.com/phiresky/sql.js-httpvfs), [dacort's Stack Overflow answer](https://stackoverflow.com/a/59434097/1319998) and [michalc's sqlite-s3-query](https://github.com/michalc/sqlite-s3-query).
 
@@ -79,7 +85,7 @@ Under the hood [writer starvation](https://www.sqlite.org/lockingv3.html#writer_
 
 ### Comparison with `sqlite_deserialize`
 
-The main reason for using sqlite-memory-vfs over `sqlite_deserialize` is the lower memory usage for larger databases. For example the following may not even complete due to running out of memory:
+The main reason for using sqlite-memory-vfs over `sqlite_deserialize` is the lower memory usage for larger databases. For example the following may not even complete due to not being able to allocate enough contiguous memory for the database:
 
 ```python
 import resource
